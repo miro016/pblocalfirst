@@ -1,0 +1,63 @@
+{
+  "name": "pocketbase-localfirst",
+  "version": "0.1.0",
+  "description": "Local-first, signal-reactive layer for PocketBase: cached collections, offline writes, live sync, PocketBase-compatible filters/sort/expand, typed via pocketbase-typegen.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./angular": {
+      "types": "./dist/angular/index.d.ts",
+      "import": "./dist/angular/index.js",
+      "require": "./dist/angular/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:parity": "node --experimental-eventsource scripts/parity-check.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "pocketbase",
+    "local-first",
+    "offline",
+    "sync",
+    "signals",
+    "angular",
+    "signaldb",
+    "realtime"
+  ],
+  "peerDependencies": {
+    "@angular/core": ">=17.0.0",
+    "pocketbase": ">=0.21.0"
+  },
+  "peerDependenciesMeta": {
+    "@angular/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@angular/core": "^19.0.0",
+    "fake-indexeddb": "^6.0.0",
+    "pocketbase": "^0.26.0",
+    "pocketbase-typegen": "^1.3.0",
+    "rxjs": "^7.8.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0",
+    "zone.js": "^0.15.0"
+  }
+}
