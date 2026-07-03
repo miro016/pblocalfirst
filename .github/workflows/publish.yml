@@ -1,17 +1,12 @@
-name: Publish to npm
+name: Publish to npm (manual fallback)
 
-# Publishes when you create a GitHub Release (recommended flow):
-#   1. bump "version" in package.json and push to main
-#   2. create a Release on GitHub with tag v<version> (e.g. v0.1.0)
-# The workflow verifies the tag matches package.json, runs the full test
-# suite, builds, and publishes with npm provenance.
-#
-# Requires the NPM_TOKEN repository secret (see README-RELEASING notes).
+# Normal releases are fully automated — see release-please.yml (merge the
+# release PR on main and the package is tagged, released and published).
+# This workflow is a manual escape hatch: run it from the Actions tab to
+# publish whatever is on the selected ref (e.g. to retry a failed publish).
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch: # manual fallback: publishes whatever is on the selected ref
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,16 +23,6 @@ jobs:
           node-version: 22
           cache: npm
           registry-url: https://registry.npmjs.org
-
-      - name: Verify tag matches package.json version
-        if: github.event_name == 'release'
-        run: |
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          TAG="${{ github.event.release.tag_name }}"
-          if [ "v$PKG_VERSION" != "$TAG" ]; then
-            echo "Tag $TAG does not match package.json version v$PKG_VERSION" >&2
-            exit 1
-          fi
 
       - run: npm ci
       - run: npm run typecheck
