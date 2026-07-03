@@ -1,0 +1,50 @@
+name: Publish to npm
+
+# Publishes when you create a GitHub Release (recommended flow):
+#   1. bump "version" in package.json and push to main
+#   2. create a Release on GitHub with tag v<version> (e.g. v0.1.0)
+# The workflow verifies the tag matches package.json, runs the full test
+# suite, builds, and publishes with npm provenance.
+#
+# Requires the NPM_TOKEN repository secret (see README-RELEASING notes).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: # manual fallback: publishes whatever is on the selected ref
+
+permissions:
+  contents: read
+  id-token: write # required for npm --provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify tag matches package.json version
+        if: github.event_name == 'release'
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG="${{ github.event.release.tag_name }}"
+          if [ "v$PKG_VERSION" != "$TAG" ]; then
+            echo "Tag $TAG does not match package.json version v$PKG_VERSION" >&2
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

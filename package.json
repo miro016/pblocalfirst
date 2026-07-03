@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Local-first, signal-reactive layer for PocketBase: cached collections, offline writes, live sync, PocketBase-compatible filters/sort/expand, typed via pocketbase-typegen.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miro016/pblocalfirst.git"
+  },
+  "homepage": "https://github.com/miro016/pblocalfirst#readme",
+  "bugs": {
+    "url": "https://github.com/miro016/pblocalfirst/issues"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -28,7 +36,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:parity": "node --experimental-eventsource scripts/parity-check.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "keywords": [
     "pocketbase",
