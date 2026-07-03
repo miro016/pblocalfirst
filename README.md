@@ -1,4 +1,4 @@
-# pocketbase-localfirst
+# @miro016/pocketbase-localfirst
 
 A local-first, signal-reactive data layer for [PocketBase](https://pocketbase.io), inspired by [SignalDB](https://signaldb.js.org) but built specifically for PocketBase and typed end-to-end via [pocketbase-typegen](https://github.com/patmood/pocketbase-typegen).
 
@@ -7,13 +7,13 @@ Declare which collections are cached on the client. Then use the same API you kn
 - **Works offline.** Cached collections are persisted (IndexedDB by default) and readable/writable without a connection. Writes are queued and replayed in order when the server is reachable again.
 - **Everything is live.** Remote changes stream in over PocketBase realtime and update local queries, signals and subscriptions immediately. Local writes are applied optimistically.
 - **Conflicts resolve automatically.** Last-update-wins by default, with a hook for your own resolver (per collection or global).
-- **Angular-first, framework-agnostic.** Reactive reads integrate with Angular signals out of the box (`pocketbase-localfirst/angular`); a tiny adapter interface plugs into any other signal system, and callback-based live queries work everywhere.
+- **Angular-first, framework-agnostic.** Reactive reads integrate with Angular signals out of the box (`@miro016/pocketbase-localfirst/angular`); a tiny adapter interface plugs into any other signal system, and callback-based live queries work everywhere.
 - **Verified against a real server.** `scripts/parity-check.mjs` runs a matrix of filters/sorts/expands against both the local engine and a real PocketBase instance and asserts identical results, plus end-to-end realtime and offline-replay scenarios.
 
 ## Installation
 
 ```sh
-npm install pocketbase-localfirst pocketbase
+npm install @miro016/pocketbase-localfirst pocketbase
 ```
 
 `pocketbase` (SDK ≥ 0.21) is a peer dependency. `@angular/core` ≥ 17 is an optional peer dependency, needed only for the Angular adapter.
@@ -30,7 +30,7 @@ Create the client:
 
 ```ts
 import PocketBase from 'pocketbase'
-import { createLocalFirst } from 'pocketbase-localfirst'
+import { createLocalFirst } from '@miro016/pocketbase-localfirst'
 import type { CollectionResponses } from './pocketbase-types' // generated
 
 const pb = new PocketBase('https://your.pocketbase.io')
@@ -80,7 +80,7 @@ const unsub = await lf.collection('posts').subscribe('*', (e) => {
 
 ```ts
 // app.config.ts
-import { provideLocalFirst } from 'pocketbase-localfirst/angular'
+import { provideLocalFirst } from '@miro016/pocketbase-localfirst/angular'
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -98,7 +98,7 @@ export const appConfig: ApplicationConfig = {
 ```ts
 // posts.component.ts
 import { Component, computed } from '@angular/core'
-import { injectLocalFirst } from 'pocketbase-localfirst/angular'
+import { injectLocalFirst } from '@miro016/pocketbase-localfirst/angular'
 import type { CollectionResponses } from '../pocketbase-types'
 
 @Component({
@@ -130,7 +130,7 @@ export class PostsComponent {
 Reactive reads use a tiny SignalDB-style adapter interface — implement two functions to integrate any signal library:
 
 ```ts
-import { createLocalFirst, signalReactivity } from 'pocketbase-localfirst'
+import { createLocalFirst, signalReactivity } from '@miro016/pocketbase-localfirst'
 // e.g. for Vue: depend -> track a ref, notify -> bump it
 const vueReactivity = signalReactivity(() => {
   const version = shallowRef(0)
