@@ -107,14 +107,16 @@ describe('PocketBase-compatible reads (served from the local db)', () => {
 })
 
 describe('writes', () => {
-  it('create online returns the server record', async () => {
+  it('create online resolves optimistically and syncs in the background', async () => {
     const fake = new FakePb()
     const lf = makeClient(fake)
     await lf.collection('posts').getFullList()
 
     const record = await lf.collection('posts').create({ title: 'fresh' })
     expect(record.collectionName).toBe('posts')
-    expect(fake.table('posts').get(record.id)?.title).toBe('fresh')
+    expect(record.title).toBe('fresh')
+    // the server receives it via the background flush, not before the call resolves
+    await vi.waitFor(() => expect(fake.table('posts').get(record.id)?.title).toBe('fresh'))
   })
 
   it('update applies +/- field modifiers optimistically', async () => {

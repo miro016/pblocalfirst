@@ -122,14 +122,21 @@ describe('offline writes', () => {
     expect(fake.table('users').get(posts[0].author as string)?.name).toBe('Zoe')
   })
 
-  it('rolls back and rejects when the server refuses an online write', async () => {
+  it('rolls back and reports when the server refuses an online write', async () => {
     const fake = new FakePb()
-    const lf = makeClient(fake)
+    const errors: SyncErrorInfo[] = []
+    const lf = makeClient(fake, { onSyncError: (info: SyncErrorInfo) => errors.push(info) })
     await synced(lf, 'posts', 0)
 
     fake.failWrites = validationError('nope')
-    await expect(lf.collection('posts').create({ title: 'bad' })).rejects.toMatchObject({ status: 400 })
+    // optimistic local-first: the write resolves immediately, it is not rejected
+    const created = await lf.collection('posts').create({ title: 'bad' })
+    expect(created.title).toBe('bad')
+
+    // the background push is refused -> rolled back locally and reported
+    await vi.waitFor(() => expect(errors).toHaveLength(1))
     fake.failWrites = null
+    expect(errors[0].collection).toBe('posts')
     expect(await lf.collection('posts').getFullList()).toHaveLength(0)
   })
 
