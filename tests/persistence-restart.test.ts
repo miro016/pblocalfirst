@@ -66,21 +66,18 @@ describe('cold starts', () => {
     expect(fake.table('posts').get('ppnewaaaaaaaaaa')!.title).toBe('offline create')
   })
 
-  it('a pending update restored without its data snapshot degenerates into a delete', async () => {
-    // NOTE: documents current (hazardous) behavior. The queue is persisted
-    // synchronously but the data snapshot is debounced; if only the queue
-    // survives (crash inside the 200ms window), the restored update op finds
-    // no local record, last-update-wins treats "local" as deleted and flips
-    // the op into a delete that is pushed to the server.
+  it('a pending update restored without its data snapshot is reconstructed, not turned into a delete', async () => {
+    // The queue persists synchronously but the data snapshot is debounced; if
+    // only the queue survives a crash, the update op must be reconstructed
+    // from its base + payload instead of being mistaken for a local deletion.
     const source = memoryPersistence()
     const fake = new FakePb()
-    fake.serverWrite('posts', { id: 'p1', title: 'orig' })
+    fake.serverWrite('posts', { id: 'p1', title: 'orig', views: 3 })
 
     const session1 = makeClient(fake, { persistence: source })
     await synced(session1, 'posts', 1)
     await goOffline(fake, session1)
     await session1.collection('posts').update('p1', { title: 'offline edit' })
-    await dataPersisted()
     session1.destroy()
 
     // simulate a crash that persisted the queue but not the data snapshot
@@ -93,7 +90,24 @@ describe('cold starts', () => {
     expect(session2.status.pending).toBe(1) // the op survived the restart
     await vi.waitFor(() => expect(session2.status.pending).toBe(0))
 
-    await vi.waitFor(() => expect(fake.table('posts').has('p1')).toBe(false)) // the edit became a delete
+    expect(fake.table('posts').get('p1')).toMatchObject({ title: 'offline edit', views: 3 })
+    expect((await session2.collection('posts').getOne('p1')).title).toBe('offline edit')
+  })
+
+  it('destroy() flushes the debounced data snapshot immediately', async () => {
+    const persistence = memoryPersistence()
+    const fake = new FakePb()
+    fake.serverWrite('posts', { id: 'p1', title: 'orig' })
+
+    const session1 = makeClient(fake, { persistence })
+    await synced(session1, 'posts', 1)
+    await goOffline(fake, session1)
+    await session1.collection('posts').update('p1', { title: 'edit right before destroy' })
+    session1.destroy() // no debounce wait: the snapshot must be flushed here
+
+    const session2 = makeClient(fake, { persistence })
+    await session2.ready()
+    expect((await session2.collection('posts').getOne('p1')).title).toBe('edit right before destroy')
   })
 })
 

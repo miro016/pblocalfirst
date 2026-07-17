@@ -161,11 +161,7 @@ describe('default resolver: delete vs remote update', () => {
 })
 
 describe('default resolver: create vs remote create with the same id', () => {
-  it('the losing create fails permanently and reconcile restores the server version', async () => {
-    // NOTE: documents current behavior. The pending create wins last-update-wins
-    // locally but is pushed as a create, which the server rejects with 400
-    // ("id already exists"); the op is rolled back and reported instead of
-    // degrading to an update. A future fix could flip the op to an update.
+  it('a newer local create degrades to an update of the existing remote record', async () => {
     const fake = new FakePb()
     const errors: unknown[] = []
     const lf = makeClient(fake, { onSyncError: (info: unknown) => errors.push(info) })
@@ -173,18 +169,42 @@ describe('default resolver: create vs remote create with the same id', () => {
 
     await goOffline(fake, lf)
     await lf.collection('posts').create({ id: 'ppaaaaaaaaaaaaa', title: 'local create' })
+    // another node created the same id first, with an older timestamp
     fake.serverWrite('posts', { id: 'ppaaaaaaaaaaaaa', title: 'other node create' }, { emit: false })
 
     fake.online = true
+    const before = fake.requestLog.length
     await lf.sync()
     await settled(lf)
 
-    expect(errors).toHaveLength(1)
-    expect(errors[0]).toMatchObject({ collection: 'posts', op: { type: 'create', id: 'ppaaaaaaaaaaaaa' } })
-    // the server keeps the winning node's version
-    expect(fake.table('posts').get('ppaaaaaaaaaaaaa')!.title).toBe('other node create')
-    // after the rollback a further sync converges the local db onto the server
+    // the winning local data is pushed as an update, never as a duplicate create
+    expect(errors).toHaveLength(0)
+    expect(countRequests(fake, 'create:posts', before)).toBe(0)
+    expect(countRequests(fake, 'update:posts', before)).toBe(1)
+    expect(fake.table('posts').get('ppaaaaaaaaaaaaa')!.title).toBe('local create')
+    expect((await lf.collection('posts').getOne('ppaaaaaaaaaaaaa')).title).toBe('local create')
+  })
+
+  it('an older local create is dropped in favor of the other node record', async () => {
+    const fake = new FakePb()
+    const errors: unknown[] = []
+    const lf = makeClient(fake, { onSyncError: (info: unknown) => errors.push(info) })
+    await synced(lf, 'posts', 0)
+
+    await goOffline(fake, lf)
+    await lf.collection('posts').create({ id: 'ppaaaaaaaaaaaaa', title: 'local create' })
+    fake.clockMs = Date.now() + 60_000 // the other node's create is newer
+    fake.serverWrite('posts', { id: 'ppaaaaaaaaaaaaa', title: 'other node create' }, { emit: false })
+
+    fake.online = true
+    const before = fake.requestLog.length
     await lf.sync()
+    await settled(lf)
+
+    expect(errors).toHaveLength(0)
+    expect(countRequests(fake, 'create:posts', before)).toBe(0)
+    expect(countRequests(fake, 'update:posts', before)).toBe(0)
+    expect(fake.table('posts').get('ppaaaaaaaaaaaaa')!.title).toBe('other node create')
     expect((await lf.collection('posts').getOne('ppaaaaaaaaaaaaa')).title).toBe('other node create')
   })
 })

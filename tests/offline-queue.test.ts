@@ -135,10 +135,7 @@ describe('queue persistence across restarts', () => {
     await session1.collection('posts').update('p1', { title: 'offline edit', author: created.id })
     expect(session1.status.pending).toBe(2)
     await manager(session1).queue.flushPersistence()
-    // the data snapshot is saved on a 200ms debounce and destroy() does not
-    // flush it; wait it out so the restart restores both data and queue
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    session1.destroy()
+    session1.destroy() // flushes the debounced data snapshot as well
 
     // still offline: the new session restores the queue from persistence
     const session2 = makeClient(fake, { persistence })

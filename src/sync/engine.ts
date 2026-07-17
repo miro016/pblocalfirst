@@ -108,6 +108,9 @@ export class CollectionSync<T extends BaseRecord = BaseRecord> {
 
   dispose(): void {
     this.storeUnsub()
+    // a clean shutdown must not lose the debounce window: persist the latest
+    // snapshot now so a restart sees the same data the queue ops assume
+    this.persistNow.flush()
     void this.stopRealtime()
   }
 
@@ -267,8 +270,22 @@ export class CollectionSync<T extends BaseRecord = BaseRecord> {
     await this.resolveAgainstRemote(pending as PendingOp<T>, remote)
   }
 
+  /**
+   * The record state the pending op intends locally. Usually the store copy;
+   * when it is missing (e.g. the persisted queue survived a crash but the
+   * debounced data snapshot did not), reconstruct it from the op's base and
+   * payload — otherwise a restored pending update would be indistinguishable
+   * from a local deletion and last-update-wins would turn it into a delete.
+   */
+  private localIntent(pending: PendingOp<T>): T | null {
+    const stored = (this.store.peek(pending.id) as T | undefined) ?? null
+    if (stored) return stored
+    if (!pending.data) return null
+    return { ...(pending.base ?? {}), ...pending.data, id: pending.id } as T
+  }
+
   private async runResolver(pending: PendingOp<T>, remote: T | null): Promise<T | null> {
-    const local = pending.type === 'delete' ? null : ((this.store.peek(pending.id) as T | undefined) ?? null)
+    const local = pending.type === 'delete' ? null : this.localIntent(pending)
     const resolver = this.resolver
     if (resolver) {
       return await resolver({
@@ -316,11 +333,13 @@ export class CollectionSync<T extends BaseRecord = BaseRecord> {
       this.store.upsert(record)
       this.ctx.queue.replace({ ...pending, type: 'create', data: stripSystem(record), base: null, opTime: pending.opTime })
     } else {
+      // the record exists remotely, so even a pending create must continue as
+      // an update — pushing it as a create would be rejected as a duplicate id
       const record = { ...winner, id: pending.id } as T
       this.store.upsert(record)
       this.ctx.queue.replace({
         ...pending,
-        type: pending.type === 'create' ? 'create' : 'update',
+        type: 'update',
         data: stripSystem(record),
         base: remote,
         opTime: pending.opTime,
