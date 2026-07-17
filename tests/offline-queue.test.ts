@@ -21,7 +21,7 @@ describe('compaction over long offline sessions', () => {
     const lf = makeClient(fake)
     await synced(lf, 'posts', 1)
 
-    fake.online = false
+    await goOffline(fake, lf)
     for (let i = 1; i <= 100; i++) {
       await lf.collection('posts').update('p1', { title: `v${i}`, views: i })
     }
@@ -42,7 +42,7 @@ describe('compaction over long offline sessions', () => {
     const lf = makeClient(fake)
     await synced(lf, 'posts', 1)
 
-    fake.online = false
+    await goOffline(fake, lf)
     await lf.collection('posts').delete('p1')
     await lf.collection('posts').create({ id: 'p1', title: 'reborn' })
     expect(lf.status.pending).toBe(1)
@@ -63,7 +63,7 @@ describe('compaction over long offline sessions', () => {
     const lf = makeClient(fake)
     await synced(lf, 'posts', 0)
 
-    fake.online = false
+    await goOffline(fake, lf)
     const created = await lf.collection('posts').create({ title: 'ephemeral' })
     await lf.collection('posts').update(created.id, { title: 'still ephemeral' })
     await lf.collection('posts').delete(created.id)
@@ -85,7 +85,7 @@ describe('compaction over long offline sessions', () => {
     const lf = makeClient(fake)
     await synced(lf, 'posts', 1)
 
-    fake.online = false
+    await goOffline(fake, lf)
     await lf.collection('posts').delete('p1')
     await lf.collection('posts').create({ id: 'p1', title: 'reborn', views: 0 })
     await lf.collection('posts').update('p1', { views: 42 })

@@ -1,7 +1,7 @@
 import type PocketBase from 'pocketbase'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createLocalFirst } from '../src'
-import type { ConflictContext } from '../src/types'
+import type { ConflictContext, SyncErrorInfo } from '../src/types'
 import { FakePb } from './helpers/fakePb'
 import { cleanupClients, countRequests, goOffline, makeClient, manager, settled, synced } from './helpers/testClient'
 
@@ -20,7 +20,7 @@ afterEach(() => {
 })
 
 describe('default resolver: update vs remote update', () => {
-  it('push path, remote newer: the op is dropped and the caller gets the remote record', async () => {
+  it('push path, remote newer: the op is dropped and the local db converges to the remote record', async () => {
     const fake = new FakePb()
     fake.serverWrite('posts', { id: 'p1', title: 'orig', views: 1 })
     const lf = makeClient(fake)
@@ -30,10 +30,12 @@ describe('default resolver: update vs remote update', () => {
     fake.clockMs = Date.now() + 60_000
     fake.serverWrite('posts', { id: 'p1', title: 'remote (newer)', views: 2 }, { emit: false })
 
+    // optimistic local-first: the awaited call resolves with the local record;
+    // the background push then discovers the conflict and the remote side wins
     const result = await lf.collection('posts').update('p1', { title: 'local (older)' })
+    expect(result.title).toBe('local (older)')
     await settled(lf)
 
-    expect(result.title).toBe('remote (newer)')
     expect(fake.table('posts').get('p1')!.title).toBe('remote (newer)')
     expect((await lf.collection('posts').getOne('p1')).title).toBe('remote (newer)')
     // the conflict was resolved without writing to the server
@@ -315,21 +317,29 @@ describe('custom resolvers', () => {
     expect((await lf.collection('posts').getOne('p1')).title).toBe('remote edit')
   })
 
-  it('push path: a throwing resolver rejects the awaited write and rolls back', async () => {
+  it('push path: a throwing resolver rolls back the write and reports via onSyncError', async () => {
     const fake = new FakePb()
     fake.serverWrite('posts', { id: 'p1', title: 'orig' })
+    const errors: SyncErrorInfo[] = []
     const lf = makeClient(fake, {
       conflictResolver: () => {
         throw new Error('resolver exploded')
       },
+      onSyncError: (info: SyncErrorInfo) => errors.push(info),
     })
     await synced(lf, 'posts', 1)
 
     fake.serverWrite('posts', { id: 'p1', title: 'remote edit' }, { emit: false })
 
-    await expect(lf.collection('posts').update('p1', { title: 'local edit' })).rejects.toThrow('resolver exploded')
+    // optimistic local-first: the awaited call resolves with the local record
+    const result = await lf.collection('posts').update('p1', { title: 'local edit' })
+    expect(result.title).toBe('local edit')
     await settled(lf)
+
+    // the background push hit the resolver failure -> reported once and
     // rolled back to the last server-confirmed version this client knows
+    expect(errors).toHaveLength(1)
+    expect((errors[0].error as Error).message).toBe('resolver exploded')
     expect((await lf.collection('posts').getOne('p1')).title).toBe('orig')
     expect(fake.table('posts').get('p1')!.title).toBe('remote edit')
   })

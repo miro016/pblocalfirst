@@ -6,8 +6,8 @@ import { cleanupClients, countRequests, goOffline, makeClient, synced } from './
 
 /**
  * Observability: status transitions across the sync lifecycle, error
- * reporting semantics (awaited rejection vs onSyncError), ready()/readable
- * gating and reactive status dependencies.
+ * reporting semantics (rollback + onSyncError for rejected writes),
+ * ready()/readable gating and reactive status dependencies.
  */
 
 afterEach(() => {
@@ -76,17 +76,25 @@ describe('status lifecycle', () => {
 })
 
 describe('error reporting semantics', () => {
-  it('awaited ops reject the caller and do NOT fire onSyncError', async () => {
+  it('rejected online writes resolve optimistically, roll back, and fire onSyncError', async () => {
     const fake = new FakePb()
     const errors: SyncErrorInfo[] = []
     const lf = makeClient(fake, { onSyncError: (info: SyncErrorInfo) => errors.push(info) })
     await synced(lf, 'posts', 0)
 
     fake.failWrites = validationError('rejected online')
-    await expect(lf.collection('posts').create({ title: 'bad' })).rejects.toMatchObject({ status: 400 })
+    // optimistic local-first: the write never blocks on (or rejects from) the network
+    const created = await lf.collection('posts').create({ title: 'bad' })
+    expect(created.title).toBe('bad')
+
+    await vi.waitFor(() => expect(errors).toHaveLength(1))
     fake.failWrites = null
 
-    expect(errors).toHaveLength(0)
+    expect(errors[0].collection).toBe('posts')
+    expect(errors[0].op).toMatchObject({ type: 'create', data: { title: 'bad' } })
+    expect(errors[0].error).toMatchObject({ status: 400 })
+    // the optimistic record was rolled back
+    expect(await lf.collection('posts').getFullList()).toHaveLength(0)
   })
 
   it('queued (offline) ops fire onSyncError with the full payload on replay failure', async () => {
