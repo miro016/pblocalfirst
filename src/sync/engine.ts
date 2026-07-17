@@ -452,11 +452,6 @@ export class CollectionSync<T extends BaseRecord = BaseRecord> {
 // SyncManager
 // ---------------------------------------------------------------------------
 
-interface Deferred {
-  resolve: (record: BaseRecord | null) => void
-  reject: (err: unknown) => void
-}
-
 export interface SyncManagerConfig {
   namespace: string
   reconcileIntervalMs: number
@@ -473,7 +468,6 @@ export interface SyncManagerConfig {
 export class SyncManager {
   readonly monitor: OnlineMonitor
   readonly engines = new Map<string, CollectionSync<any>>()
-  private deferreds = new Map<number, Deferred>()
   private flushing: Promise<void> | null = null
   private inFlightSeq: number | null = null
   private reconcileTimer: ReturnType<typeof setInterval> | undefined
@@ -625,24 +619,22 @@ export class SyncManager {
 
   /**
    * Enqueue a local op (already applied optimistically to the store by the
-   * caller) and, when online, wait for the server round trip so callers get
-   * the authoritative record like with the plain SDK.
+   * caller) and trigger a background flush.
+   *
+   * Optimistic local-first: the call resolves immediately with the local
+   * record and never blocks on the network. The server round trip happens in
+   * the background — right away when online, or as soon as connectivity
+   * returns when offline. The authoritative server record is applied to the
+   * store by the flush loop when it lands, so live reads/subscriptions update
+   * again on confirmation. Permanent server rejections (validation, auth) roll
+   * back the optimistic change and surface via `onSyncError`.
    */
   async submit<T extends BaseRecord>(op: Omit<PendingOp<T>, 'seq'>, optimistic: T | null): Promise<T | null> {
     const queued = this.queue.enqueue(op as Omit<PendingOp, 'seq'>)
     this.statusChanged()
     if (!queued) return optimistic // compacted away (e.g. create+delete)
-
-    if (!this.monitor.online) {
-      void this.flush() // cheap no-op while offline; keeps the loop honest
-      return optimistic
-    }
-
-    const result = await new Promise<BaseRecord | null>((resolve, reject) => {
-      this.deferreds.set(queued.seq, { resolve, reject })
-      void this.flush()
-    })
-    return (result as T | null) ?? optimistic
+    void this.flush() // background sync; a cheap no-op while offline
+    return optimistic
   }
 
   flush(): Promise<void> {
@@ -666,47 +658,22 @@ export class SyncManager {
       }
       this.inFlightSeq = op.seq
       try {
-        const result = await engine.push(op)
+        await engine.push(op)
         this.queue.removeSeq(op.seq)
-        this.settle(op.seq, result)
         this.monitor.reportSuccess()
       } catch (err) {
         if (isNetworkError(err)) {
           this.monitor.reportFailure()
-          // ops stay queued; resolve waiting callers optimistically
-          this.settleAllOptimistically()
-          break
+          break // ops stay queued; they replay when connectivity returns
         }
-        // permanent failure (validation, auth, ...) -> rollback and drop
+        // permanent failure (validation, auth, ...) -> rollback and report
         engine.rollback(op)
         this.queue.removeSeq(op.seq)
-        const deferred = this.deferreds.get(op.seq)
-        if (deferred) {
-          this.deferreds.delete(op.seq)
-          deferred.reject(err)
-        } else {
-          this.cfg.onSyncError?.({ collection: op.collection, op: { type: op.type, id: op.id, data: op.data }, error: err })
-        }
+        this.cfg.onSyncError?.({ collection: op.collection, op: { type: op.type, id: op.id, data: op.data }, error: err })
       } finally {
         this.inFlightSeq = null
         this.statusChanged()
       }
-    }
-    if (!this.monitor.online) this.settleAllOptimistically()
-  }
-
-  private settle(seq: number, result: BaseRecord | null): void {
-    const deferred = this.deferreds.get(seq)
-    if (deferred) {
-      this.deferreds.delete(seq)
-      deferred.resolve(result)
-    }
-  }
-
-  private settleAllOptimistically(): void {
-    for (const [seq, deferred] of [...this.deferreds]) {
-      this.deferreds.delete(seq)
-      deferred.resolve(null)
     }
   }
 
@@ -727,7 +694,6 @@ export class SyncManager {
     // different user (or logout): local cache and unpushed changes belong to
     // the previous identity — drop them and resync under the new identity.
     this.queue.clear()
-    this.settleAllOptimistically()
     for (const engine of this.engines.values()) {
       await engine.stopRealtime()
       await engine.clearLocal()
