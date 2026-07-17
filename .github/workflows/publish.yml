@@ -4,13 +4,19 @@ name: Publish to npm (manual fallback)
 # release PR on main and the package is tagged, released and published).
 # This workflow is a manual escape hatch: run it from the Actions tab to
 # publish whatever is on the selected ref (e.g. to retry a failed publish).
+#
+# Auth is npm trusted publishing (OIDC), and npm allows one trusted
+# publisher per package — currently registered for release-please.yml.
+# To use this fallback, temporarily change the trusted publisher's
+# "workflow filename" to publish.yml in the package settings on
+# npmjs.com, run this workflow, then switch it back.
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write # required for npm --provenance
+  id-token: write # npm trusted publishing (OIDC) + provenance
 
 jobs:
   publish:
@@ -24,12 +30,13 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
+      # Trusted publishing needs npm >= 11.5.1; Node 22 bundles npm 10.
+      - run: npm install -g npm@latest
+
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
 
       - name: Publish
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
