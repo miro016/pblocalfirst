@@ -36,6 +36,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:parity": "node --experimental-eventsource scripts/parity-check.mjs",
+    "test:cluster": "node --experimental-eventsource scripts/cluster-check.mjs",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },

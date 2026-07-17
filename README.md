@@ -246,6 +246,9 @@ npm run typecheck
 npm run build
 # end-to-end parity against a real PocketBase (spawns a disposable server):
 PB_BIN=/path/to/pocketbase npm run test:parity
+# end-to-end against a real 2-node pbreplication cluster (builds and spawns
+# two replicating nodes; needs the Go toolchain or a prebuilt node binary):
+PBR_SRC=/path/to/pbreplication npm run test:cluster
 ```
 
 ## License
