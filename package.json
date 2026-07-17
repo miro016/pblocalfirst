@@ -1,6 +1,6 @@
 {
   "name": "@miro016/pocketbase-localfirst",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Local-first, signal-reactive layer for PocketBase: cached collections, offline writes, live sync, PocketBase-compatible filters/sort/expand, typed via pocketbase-typegen.",
   "license": "MIT",
   "repository": {
